@@ -19,6 +19,14 @@
 `python3 utils/upload_to_roboflow.py`
 
 ## Treinar YOLO
+# Padrão (100 épocas, imgsz 640)
+python3 train/train.py
+
+# Customizado
+python3 train/train.py --epochs 50 --imgsz 416
+
+# Se o dataset já estiver organizado
+python3 train/train.py --skip-organize
 
 ## Executar modulo para extrair finalizações
 ### Processa todos os vídeos em `input/full_match_videos`
