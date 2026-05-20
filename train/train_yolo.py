@@ -2,6 +2,7 @@ import argparse
 import logging
 import shutil
 import os
+from roboflow import Roboflow
 from ultralytics import YOLO
  
 logging.basicConfig(
@@ -16,7 +17,17 @@ DATASET_DIR  = "train/football-shots-detection"
 DATA_YAML    = os.path.join(DATASET_DIR, "data.yaml")
 BASE_MODEL   = "yolov8x.pt"   # modelo base para fine-tuning
  
- 
+
+def download_dataset(api_key: str, workspace: str, project: str, version: int, output_dir: str):
+    logger.info(f"Baixando dataset do Roboflow: {workspace}/{project} v{version}")
+    
+    rf = Roboflow(api_key=api_key)
+    proj = rf.workspace(workspace).project(project)
+    dataset = proj.version(version).download("yolov8", location=output_dir)
+    
+    logger.info(f"Dataset baixado em: {output_dir}")
+    return dataset
+
 def organize_dataset(dataset_dir: str):
     """
     Garante que train/test/valid estão na estrutura correta.
@@ -78,7 +89,19 @@ def main():
     parser.add_argument("--data",     type=str, default=DATA_YAML,  help=f"Caminho do data.yaml (padrão: {DATA_YAML})")
     parser.add_argument("--skip-organize", action="store_true",     help="Pula a reorganização das pastas do dataset")
     args = parser.parse_args()
- 
+
+    parser.add_argument("--download",   action="store_true",  help="Baixa dataset do Roboflow antes de treinar")
+    parser.add_argument("--api-key",    type=str, default=None, help="Roboflow API key")
+    parser.add_argument("--workspace",  type=str, default=None, help="Roboflow workspace")
+    parser.add_argument("--project",    type=str, default=None, help="Roboflow project name")
+    parser.add_argument("--version",    type=int, default=1,    help="Versão do dataset (padrão: 1)")
+
+    if args.download:
+        if not all([args.api_key, args.workspace, args.project]):
+            logger.error("Para baixar o dataset informe --api-key, --workspace e --project")
+            return
+        download_dataset(args.api_key, args.workspace, args.project, args.version, DATASET_DIR)
+    
     if not args.skip_organize:
         organize_dataset(DATASET_DIR)
  
