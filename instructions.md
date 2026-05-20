@@ -19,14 +19,21 @@
 `python3 utils/upload_to_roboflow.py`
 
 ## Treinar YOLO
-# Padrão (100 épocas, imgsz 640)
+### Padrão (100 épocas, imgsz 640)
 python3 train/train.py
 
-# Customizado
+### Customizado
 python3 train/train.py --epochs 50 --imgsz 416
 
-# Se o dataset já estiver organizado
+### Se o dataset já estiver organizado
 python3 train/train.py --skip-organize
+
+python3 train/train_yolo.py \
+    --download \
+    --api-key 7C7LbLmEERKtMvATLeGj \
+    --workspace joao-pedro-tavares-santos \
+    --project football-player-detection \
+    --version 1
 
 ## Executar modulo para extrair finalizações
 ### Processa todos os vídeos em `input/full_match_videos`
