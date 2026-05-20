@@ -13,7 +13,8 @@ output/
 runs/
 
 # Frames de treinamento
-train/
+train/football-players-detection.yolov5pytorch
+train/football-shots-detection
 
 # Modelos
 *.pt
