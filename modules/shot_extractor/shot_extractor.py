@@ -23,11 +23,10 @@ BALL_SPEED_THRESHOLD = 40
 class ShotExtractor:
     def __init__(self, frame_window: int = 5):
         self.frame_window = frame_window
+        logger.info(f"ShotExtractor inicializado (frame_window={frame_window}, speed_threshold={BALL_SPEED_THRESHOLD}px)")
+        logger.info(f"Zona de finalização: x=[{SHOT_ZONE_X_MIN}, {SHOT_ZONE_X_MAX}]m, y=[{SHOT_ZONE_Y_MIN}, {SHOT_ZONE_Y_MAX}]m")
 
     def _ball_positions(self, tracks: dict) -> list:
-        """
-        Extrai lista de centros da bola por frame (`None` se ausente)
-        """
         position = []
         for frame_ball in tracks["ball"]:
             ball = frame_ball.get(1)
@@ -35,6 +34,10 @@ class ShotExtractor:
                 position.append(get_center_of_bbox(ball["bbox"]))
             else:
                 position.append(None)
+        
+        missing = position.count(None)
+        logger.debug(f"Posição da bola extraída: {len(position)} frames, {missing} ausentes")
+
         return position
     
     
@@ -43,9 +46,6 @@ class ShotExtractor:
     #==========================
 
     def _ball_speed_pixels(self, position: list, frame_num: int) -> float:
-        """
-        Velocidade da bola em pixels entre `frame_num-1` e `frame_num`
-        """
         if frame_num == 0:
             return 0.0
         
@@ -58,28 +58,25 @@ class ShotExtractor:
         return measure_distance(p_prev, p_curr)
     
     def _in_shot_zone(self, tracks: dict, frame_num: int, player_id: int) -> bool:
-        """
-        Verifica se o jogador com posse está na zona de finalização (coordenadas reis)
-        """
         try:
             player_info = tracks["players"][frame_num][player_id]
             pos = player_info.get("position_transformed")
 
             if pos is None:
+                logger.debug(f"Frame {frame_num}: jogador {player_id} sem position_transformed")
                 return False
             
             x, y = pos
-            return (
+            in_zone = (
                 SHOT_ZONE_X_MIN <= x <= SHOT_ZONE_X_MAX
                 and SHOT_ZONE_Y_MIN <= y <= SHOT_ZONE_Y_MAX
             )
+            logger.debug(f"Frame {frame_num}: jogador {player_id} em ({x:.1f}, {y:.1f}) m - {'dentro' if in_zone else 'fora'} da zona")
+            return in_zone
         except (KeyError, TypeError):
             return False
         
     def _moving_toward_goal(self, positions: list, frame_num: int) -> bool:
-        """
-        Verifica se a bola está se movendo em direção ao gol (aumento de x)
-        """
         if frame_num < 2:
             return False
         
@@ -92,18 +89,17 @@ class ShotExtractor:
         return p_curr[0] > p_prev[0]
     
     def detect_shot_frames(self, tracks: dict) -> list[int]:
-        """
-        Retorna lista de frame_num onde uma finalização foi detectada
-        Critérios:
-        1. Aceleração brusca da bola (pico de velocidade em pixels)
-        2. Jogador com posse na zona de finalização
-        3. Bola se movendo em direção ao gol
-        """
+        logger.info("Iniciando detecção de finalizações")
         ball_positions = self._ball_positions(tracks)
         shot_frames = []
         cooldown = 0 # Evita detectar o mesmo chute em frames consecutivos
+        frames_skipped_speed = 0
+        frames_skipped_no_player = 0
+        frames_skipped_zone = 0
+        frames_skipped_direction = 0
 
         num_frames = len(tracks["players"])
+        logger.info(f"Analisando {num_frames} frames")
 
         for frame_num in range(1, num_frames):
             if cooldown > 0:
@@ -112,6 +108,7 @@ class ShotExtractor:
 
             speed = self._ball_speed_pixels(ball_positions, frame_num)
             if speed < BALL_SPEED_THRESHOLD:
+                frames_skipped_speed += 1
                 continue
 
             # Identifica quem tem a pose da bola no frame 
@@ -122,18 +119,34 @@ class ShotExtractor:
                     break
             
             if player_with_ball is None:
+                frames_skipped_no_player += 1
                 continue
 
             in_zone = self._in_shot_zone(tracks, frame_num, player_with_ball)
-            toward_goal = self._moving_toward_goal(ball_positions, frame_num)
+            if not in_zone:
+                frames_skipped_zone += 1
+                continue
 
-            if in_zone and toward_goal:
-                logger.info(f"Finalização detectada no frame {frame_num}")
-                logger.info(f"(bola: {speed:.1f}px/frame, jogador: {player_with_ball})")
-                shot_frames.append(frame_num)
-                cooldown = self.frame_window * 2
+            toward_goal = self._moving_toward_goal(ball_positions, frame_num)
+            if not toward_goal:
+                frames_skipped_direction += 1
+                continue
+
+            logger.info(
+                f"Finalizações detectadas no frame {frame_num} "
+                f"(bola: {speed:.1f}px/frame, jogador: {player_with_ball})"
+            )
+            shot_frames.append(frame_num)
+            cooldown = self.frame_window * 2
         
-        logger.info(f"Total de finalizações detectadas: {len(shot_frames)}")
+        logger.info(f"Detecção concluída: {len(shot_frames)} finalização(ões) encontrada(s)")
+        logger.info(
+            f"Frames descartados - Velocidade insuficiente: {frames_skipped_speed} | "
+            f"sem posse: {frames_skipped_no_player} | "
+            f"fora da zona: {frames_skipped_zone} | "
+            f"direção errada: {frames_skipped_direction}"
+        )
+
         return shot_frames
     
     #=================
@@ -141,12 +154,9 @@ class ShotExtractor:
     #=================
 
     def save_shot_frames(self, video_frames: list, shot_frames: list[int], output_dir: str, video_name: str) -> list[str]:
-        """
-        Salva frame_windows frames antes e depois de cada finalização.
-        Retorna lista de caminhos salvos
-        """
         raw_dir = os.path.join(output_dir, "shots", "raw")
         os.makedirs(raw_dir, exist_ok=True)
+        logger.info(f"Salvand framas de {len(shot_frames)} finalização(ões) em: {raw_dir}")
         
         saved_paths = []
         total_frames = len(video_frames)
@@ -154,6 +164,7 @@ class ShotExtractor:
         for shot_num, shot_frame in enumerate(shot_frames):
             start = max(0, shot_frame - self.frame_window)
             end = min(total_frames -1, shot_frame + self.frame_window)
+            logger.info(f"Finalizações {shot_num:03d}: frames {start}-{end} (centro: {shot_frames})")
 
             for f in range(start, end + 1):
                 offset = f - shot_frame # Negativo -> Antes; 0 = Moment; Positivo = Depois

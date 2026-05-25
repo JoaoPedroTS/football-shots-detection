@@ -1,9 +1,13 @@
+import logging
 from sklearn.cluster import KMeans
+
+logger = logging.getLogger(__name__)
 
 class TeamAssigner:
     def __init__(self):
         self.team_colors = {}
         self.player_team_dict = {}
+        logger.info("TeamAssigner inicializado")
 
     def get_clustering_model(self, image):
         # Reshape image to 2d array
@@ -38,11 +42,10 @@ class TeamAssigner:
         non_player_cluster = max(set(corner_clusters), key=corner_clusters.count)
         player_cluster = 1 if non_player_cluster == 0 else 0
 
-        player_color = kmeans.cluster_centers_[player_cluster]
-
-        return player_color
+        return kmeans.cluster_centers_[player_cluster]
 
     def assign_team_color(self, frame, player_detections):
+        logger.info(f"Atribuindo cores de time para {len(player_detections)} jogadores no frame inicial")
         player_colors = []
 
         for _, player_detection in player_detections.items():
@@ -57,6 +60,7 @@ class TeamAssigner:
 
         self.team_colors[1] = kmeans.cluster_centers_[0]
         self.team_colors[2] = kmeans.cluster_centers_[1]
+        logger.info(f"Cores dos times definidas — Time 1: {self.team_colors[1].astype(int).tolist()} | Time 2: {self.team_colors[2].astype(int).tolist()}")
 
     def get_player_team(self, frame, player_bbox, player_id):
         if player_id in self.player_team_dict:
@@ -67,5 +71,6 @@ class TeamAssigner:
         team_id += 1
 
         self.player_team_dict[player_id] = team_id
+        logger.debug(f"Jogador {player_id} atribuído ao time {team_id}")
 
         return team_id

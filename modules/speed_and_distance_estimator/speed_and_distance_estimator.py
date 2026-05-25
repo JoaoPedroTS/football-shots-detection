@@ -1,22 +1,32 @@
+import logging
 import cv2
 import sys
 sys.path.append("../")
 
 from utils import measure_distance, get_foot_position
 
+logger = logging.getLogger(__name__)
+
 class SpeedAndDistanceEstimator():
     def __init__(self):
         self.frame_window = 5
         self.frame_rate = 24
+        logger.info(f"SpeedAndDistanceEstimator inicializado (janela={self.frame_window} frames, fps={self.frame_rate})")
 
     def add_speed_and_distance_to_tracks(self, tracks):
+        logger.info("Calculando velocidade e distância dos tracks")
         total_distance = {}
+        total_calculated = 0
+        max_speed = 0.0
+        max_speed_label = ""
         
         for object, object_tracks in tracks.items():
             if object == "referees":
+                logger.debug("Pulando árbitros no cálculo de velocidade")
                 continue
             
             number_of_frames = len(object_tracks)
+            logger.info(f"Processando '{object}': {number_of_frames} frames")
 
             for frame_num in range(0, number_of_frames, self.frame_window):
                 last_frame = min(frame_num + self.frame_window, number_of_frames-1)
@@ -43,6 +53,11 @@ class SpeedAndDistanceEstimator():
                         total_distance[object][track_id] = 0
 
                     total_distance[object][track_id] += distance_covered
+                    total_calculated += 1
+
+                    if speed_km_per_hour > max_speed:
+                        max_speed = speed_km_per_hour
+                        max_speed_label = f"{object} id={track_id}"
 
                     for frame_num_batch in range(frame_num, last_frame):
                         if track_id not in tracks[object][frame_num_batch]:
@@ -50,9 +65,16 @@ class SpeedAndDistanceEstimator():
                         
                         tracks[object][frame_num_batch][track_id]["speed"] = speed_km_per_hour
                         tracks[object][frame_num_batch][track_id]["distance"] = total_distance[object][track_id]
+        logger.info(
+            f"Velocidade calculada: {total_calculated} segmentos processados - "
+            f"Velocidade máxima: {max_speed:.1f} km/h ({max_speed_label})"
+        )                        
 
     def draw_speed_and_distance(self, frames, tracks):
+        logger.info(f"Desenhando velocidade e distância em {len(frames)} frames")
         output_frames = []
+        drawn = 0
+
         for frame_num, frame in enumerate(frames):
             for object, object_tracks in tracks.items():
                 if object == "referees":
@@ -91,4 +113,6 @@ class SpeedAndDistanceEstimator():
                             2
                         )
             output_frames.append(frame)
+        
+        logger.info(f"Anotações de velocidade/distância concluídas: {drawn} rótulos desenhados")
         return output_frames
